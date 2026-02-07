@@ -56,17 +56,30 @@ export function UserForm({
       onSubmit={handleSubmit((vals) => onSubmit(vals))}
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {userFields.map((f) => (
-          <Input
-            key={String(f.name)}
-            label={f.label}
-            required={f.required}
-            type={f.type}
-            placeholder={f.placeholder}
-            error={(errors as any)?.[f.name]?.message as string | undefined}
-            {...register(f.name, f.rules)}
-          />
-        ))}
+        {userFields.map((f) => {
+          const extra: any = {};
+          if (f.name === "phoneNumber") {
+            extra.inputMode = "numeric";
+            extra.maxLength = 10;
+            extra.onInput = (e: React.FormEvent<HTMLInputElement>) => {
+              const el = e.currentTarget;
+              el.value = el.value.replace(/\D/g, "").slice(0, 10);
+            };
+          }
+
+          return (
+            <Input
+              key={String(f.name)}
+              label={f.label}
+              required={f.required}
+              type={f.type}
+              placeholder={f.placeholder}
+              error={(errors as any)?.[f.name]?.message as string | undefined}
+              {...register(f.name, f.rules)}
+              {...extra}
+            />
+          );
+        })}
       </div>
 
       <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 pt-4">

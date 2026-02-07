@@ -20,7 +20,7 @@ export const getUserByIdService = async (id) => {
 
 // Update a user
 export const updateUserService = async (id, userData) => {
-  const user = await User.findByIdAndUpdate(id, userData, { new: true });
+  const user = await User.findByIdAndUpdate(id, userData, { new: true, runValidators: true, context: 'query' });
   return user;
 };
 

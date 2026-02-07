@@ -12,20 +12,21 @@ const userSchema = new mongoose.Schema({
   phoneNumber: {
     type: String,
     required: true,
+    match: [/^[0-9]{10}$/, "Phone number must be exactly 10 digits"],
   },
   email: {
     type: String,
     required: true,
     unique: true,
   },
-//   dateOfBirth: {
-//     type: Date,
-//     required: false,
-//   },
-//   address: {
-//     type: String,
-//     required: false,
-//   },
+  dateOfBirth: {
+    type: Date,
+    required: false,
+  },
+  address: {
+    type: String,
+    required: false,
+  },
 });
 
 const User = mongoose.model("user", userSchema);

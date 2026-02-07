@@ -33,7 +33,7 @@ export default function UsersPage() {
       const data = await getUsers();
       setUsers(data);
     } catch (err) {
-      setError(err.message || "Failed to load users");
+      setError(err instanceof Error ? err.message : "Failed to load users");
       console.error(err);
     } finally {
       setLoading(false);
@@ -76,7 +76,7 @@ export default function UsersPage() {
       setFormOpen(false);
       setEditing(null);
     } catch (err) {
-      setError(err.message || "Failed to save user");
+      setError(err instanceof Error ? err.message : "Failed to save user");
       console.error(err);
     } finally {
       setSubmitting(false);
@@ -93,7 +93,7 @@ export default function UsersPage() {
       if (editing?._id === deleteTarget._id) setEditing(null);
       setDeleteTarget(null);
     } catch (err) {
-      setError(err.message || "Failed to delete user");
+      setError(err instanceof Error ? err.message : "Failed to delete user");
       console.error(err);
     } finally {
       setSubmitting(false);

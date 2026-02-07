@@ -35,8 +35,7 @@ export const userFields: UserField[] = [
     required: true,
     rules: {
       required: "Phone is required",
-      minLength: { value: 10, message: "Min 10 digits" },
-      maxLength: { value: 20, message: "Max 20 digits" },
+      pattern: { value: /^[0-9]{10}$/, message: "Phone must be exactly 10 digits" },
     },
   },
   {

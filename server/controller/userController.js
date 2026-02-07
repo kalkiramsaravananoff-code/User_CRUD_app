@@ -20,10 +20,30 @@ export const createUser = async (req, res) => {
       data: user
     });
   } catch (error) {
+    // Handle Mongoose validation errors
+    if (error && error.name === 'ValidationError') {
+      const details = Object.values(error.errors).map((e) => e.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        error: details,
+      });
+    }
+
+    // Handle duplicate key (e.g., unique email)
+    if (error && error.code === 11000) {
+      const key = Object.keys(error.keyValue || {})[0] || 'field';
+      return res.status(400).json({
+        success: false,
+        message: `${key} already exists`,
+        error: error.keyValue,
+      });
+    }
+
     return res.status(500).json({
       success: false,
       message: 'Failed to create user',
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -104,10 +124,30 @@ export const updateUser = async (req, res) => {
       data: user
     });
   } catch (error) {
+    // Handle Mongoose validation errors
+    if (error && error.name === 'ValidationError') {
+      const details = Object.values(error.errors).map((e) => e.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        error: details,
+      });
+    }
+
+    // Handle duplicate key on update
+    if (error && error.code === 11000) {
+      const key = Object.keys(error.keyValue || {})[0] || 'field';
+      return res.status(400).json({
+        success: false,
+        message: `${key} already exists`,
+        error: error.keyValue,
+      });
+    }
+
     return res.status(500).json({
       success: false,
       message: 'Failed to update user',
-      error: error.message
+      error: error.message,
     });
   }
 };
