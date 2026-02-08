@@ -20,21 +20,22 @@ export function Button({
 }) {
   const base =
     "inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition " +
-    "disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2";
+    "disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 " +
+    "active:scale-95 touch-manipulation font-medium";
 
   const sizes: Record<Size, string> = {
-    sm: "h-9 px-3 text-sm",
-    md: "h-11 px-4 text-sm",
+    sm: "h-9 px-3.5 text-xs sm:text-sm min-h-[36px]",
+    md: "h-11 px-4 text-sm min-h-[44px]",
   };
 
   const styles: Record<Variant, string> = {
     primary:
-      "bg-slate-900 text-white hover:bg-slate-800 focus:ring-slate-300",
+      "bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800 focus:ring-blue-200 active:from-blue-700 active:to-blue-800 shadow-sm",
     secondary:
-      "bg-slate-100 text-slate-900 hover:bg-slate-200 focus:ring-slate-200",
-    danger: "bg-red-600 text-white hover:bg-red-500 focus:ring-red-200",
+      "bg-slate-100 text-slate-900 hover:bg-slate-200 focus:ring-slate-200 active:bg-slate-100 border border-slate-200",
+    danger: "bg-red-600 text-white hover:bg-red-700 focus:ring-red-200 active:bg-red-700 shadow-sm",
     ghost:
-      "bg-transparent text-slate-900 hover:bg-slate-100 focus:ring-slate-200",
+      "bg-transparent text-slate-700 hover:bg-slate-100 focus:ring-slate-200 active:bg-slate-50",
   };
 
   return (

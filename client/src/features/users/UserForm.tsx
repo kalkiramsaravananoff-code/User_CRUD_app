@@ -52,10 +52,10 @@ export function UserForm({
 
   return (
     <form
-      className="space-y-5"
+      className="space-y-3 sm:space-y-5"
       onSubmit={handleSubmit((vals) => onSubmit(vals))}
     >
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:gap-4 md:gap-5 lg:grid-cols-2">
         {userFields.map((f) => {
           const extra: any = {};
           if (f.name === "phoneNumber") {
@@ -82,14 +82,20 @@ export function UserForm({
         })}
       </div>
 
-      <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 pt-4">
-        <Button type="button" variant="secondary" onClick={onCancel}>
+      <div className="flex flex-col gap-2.5 border-t border-slate-200 pt-4 sm:gap-3 sm:pt-5 sm:flex-row sm:justify-end">
+        <Button 
+          type="button" 
+          variant="secondary" 
+          onClick={onCancel}
+          className="w-full sm:w-auto"
+        >
           Cancel
         </Button>
         <Button
           type="submit"
           loading={isSubmitting || loading}
           disabled={(!isDirty && !!initialValues) || loading}
+          className="w-full sm:w-auto"
         >
           {submitText}
         </Button>
