@@ -17,20 +17,11 @@ export function Input({
   return (
     <label className="block">
       <div className="mb-1 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <span className="text-sm font-semibold text-slate-900">{label}</span>
           {required ? (
-            <span className="inline-flex items-center gap-0.5">
-              <span className="sr-only">Required</span>
-              <span
-                className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gradient-to-b from-yellow-400 to-yellow-600 ring-1 ring-yellow-300 shadow-sm"
-                title="Required"
-                aria-hidden="true"
-              >
-                <svg viewBox="0 0 24 24" className="h-2 w-2 fill-current text-white" xmlns="http://www.w3.org/2000/svg" focusable="false" aria-hidden="true">
-                  <path d="M12 .587l3.668 7.431L23.5 9.75l-5.75 5.605L19.334 24 12 20.01 4.666 24l1.584-8.645L.5 9.75l7.832-1.732L12 .587z" />
-                </svg>
-              </span>
+            <span className="text-red-500 text-sm font-bold" title="Required" aria-label="Required">
+              *
             </span>
           ) : null}
         </div>

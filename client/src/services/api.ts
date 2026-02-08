@@ -43,18 +43,33 @@ const apiCall = async <T>(
     options.body = JSON.stringify(body);
   }
 
-  const response = await fetch(`${API_URL}${endpoint}`, options);
+  try {
+    const response = await fetch(`${API_URL}${endpoint}`, options);
 
-  if (!response.ok) {
-    const errorData = (await response.json().catch(() => ({}))) as Partial<ApiResponse<unknown>>;
-    throw new Error(errorData.message || `HTTP ${response.status}`);
-  }
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as Partial<ApiResponse<unknown>>;
+      const error: any = new Error(errorData.message || `HTTP ${response.status}`);
+      error.response = {
+        status: response.status,
+        data: errorData,
+      };
+      throw error;
+    }
 
-  const data = (await response.json()) as ApiResponse<T>;
-  if (data.data) {
-    return data.data;
+    const data = (await response.json()) as ApiResponse<T>;
+    if (data.data) {
+      return data.data;
+    }
+    throw new Error('No data returned from server');
+  } catch (error: any) {
+    // Handle network errors
+    if (!error.response && error instanceof TypeError) {
+      const networkError: any = new Error('Network issue. Check your connection and try again.');
+      networkError.isNetworkError = true;
+      throw networkError;
+    }
+    throw error;
   }
-  throw new Error('No data returned from server');
 };
 
 // Create a new user

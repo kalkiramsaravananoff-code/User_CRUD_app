@@ -10,6 +10,7 @@ import { UserTable } from "../features/users/UserTable";
 import { ConfirmDelete } from "../features/users/ConfirmDelete";
 import type { User } from "../features/users/types";
 import { getUsers, createUser, updateUser, deleteUser } from "../services/api";
+import { showApiToast } from "../utils/toastHelper";
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -30,7 +31,7 @@ export default function UsersPage() {
     try {
       setLoading(true);
       setError(null);
-      const data = await getUsers();
+      const data = await showApiToast("fetch", () => getUsers());
       setUsers(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load users");
@@ -63,13 +64,15 @@ export default function UsersPage() {
 
       if (editing) {
         // Update user
-        const updated = await updateUser(editing._id, vals);
+        const updated = await showApiToast("update", () =>
+          updateUser(editing._id, vals)
+        );
         setUsers((prev) =>
           prev.map((u) => (u._id === editing._id ? updated : u))
         );
       } else {
         // Create user
-        const newUser = await createUser(vals);
+        const newUser = await showApiToast("create", () => createUser(vals));
         setUsers((prev) => [newUser, ...prev]);
       }
 
@@ -88,7 +91,7 @@ export default function UsersPage() {
     try {
       setSubmitting(true);
       setError(null);
-      await deleteUser(deleteTarget._id);
+      await showApiToast("delete", () => deleteUser(deleteTarget._id));
       setUsers((prev) => prev.filter((u) => u._id !== deleteTarget._id));
       if (editing?._id === deleteTarget._id) setEditing(null);
       setDeleteTarget(null);
