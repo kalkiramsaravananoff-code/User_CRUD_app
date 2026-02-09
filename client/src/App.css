@@ -12,9 +12,11 @@
   will-change: filter;
   transition: filter 300ms;
 }
+
 .logo:hover {
   filter: drop-shadow(0 0 2em #646cffaa);
 }
+
 .logo.react:hover {
   filter: drop-shadow(0 0 2em #61dafbaa);
 }
@@ -23,6 +25,7 @@
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -45,11 +48,15 @@
 /* Mobile-first responsive utility overrides */
 @media (max-width: 640px) {
   body {
-    font-size: 16px; /* Prevent zoom on input focus */
+    font-size: 16px;
+    /* Prevent zoom on input focus */
   }
-  
-  input, textarea, select {
-    font-size: 16px; /* Prevent zoom on input focus */
+
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+    /* Prevent zoom on input focus */
   }
 }
 
@@ -59,7 +66,8 @@ html {
 }
 
 * {
-  box-sizing: border-box;}
+  box-sizing: border-box;
+}
 
 /* Professional styling */
 body {
@@ -84,4 +92,35 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
+}
+
+/* App Navigation Styles */
+
+.app-nav {
+  display: flex;
+  gap: 20px;
+  padding: 16px 24px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.nav-link {
+  padding: 10px 20px;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  text-decoration: none;
+  border-radius: 8px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+.nav-link:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.nav-link:active {
+  transform: translateY(0);
 }
