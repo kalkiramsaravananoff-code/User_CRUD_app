@@ -1,12 +1,19 @@
 /**
  * Secure Test Environment - Event Logger
- * 
+ *
  * Provides comprehensive event logging with:
  * - Unified event schema
  * - Batch processing for efficient transmission
  * - Local persistence using IndexedDB
  * - Immutable log storage post-submission
  */
+
+const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL || "http://localhost:5000")
+    .toString()
+    .replace(/\/$/, "");
+
+const LOG_ENDPOINT = `${BACKEND_URL}/api/test-events`;
+const SEAL_ENDPOINT = (attemptId) => `${BACKEND_URL}/api/logs/attempt/${attemptId}/seal`;
 
 class EventLogger {
     constructor() {
@@ -15,8 +22,8 @@ class EventLogger {
         this.batchSize = 10;
         this.batchInterval = 5000; // 5 seconds
         this.isSubmitted = false;
-        this.dbName = 'SecureTestDB';
-        this.storeName = 'eventLogs';
+        this.dbName = "SecureTestDB";
+        this.storeName = "eventLogs";
         this.db = null;
 
         this.initializeDB();
@@ -40,13 +47,13 @@ class EventLogger {
             const request = indexedDB.open(this.dbName, 1);
 
             request.onerror = () => {
-                console.error('Failed to open IndexedDB:', request.error);
+                console.error("Failed to open IndexedDB:", request.error);
                 reject(request.error);
             };
 
             request.onsuccess = () => {
                 this.db = request.result;
-                console.log('IndexedDB initialized successfully');
+                console.log("IndexedDB initialized successfully");
                 this.loadPersistedLogs();
                 resolve(this.db);
             };
@@ -55,12 +62,12 @@ class EventLogger {
                 const db = event.target.result;
                 if (!db.objectStoreNames.contains(this.storeName)) {
                     const objectStore = db.createObjectStore(this.storeName, {
-                        keyPath: 'id',
-                        autoIncrement: true
+                        keyPath: "id",
+                        autoIncrement: true,
                     });
-                    objectStore.createIndex('attemptId', 'attemptId', { unique: false });
-                    objectStore.createIndex('timestamp', 'timestamp', { unique: false });
-                    objectStore.createIndex('eventType', 'eventType', { unique: false });
+                    objectStore.createIndex("attemptId", "attemptId", { unique: false });
+                    objectStore.createIndex("timestamp", "timestamp", { unique: false });
+                    objectStore.createIndex("eventType", "eventType", { unique: false });
                 }
             };
         });
@@ -72,9 +79,9 @@ class EventLogger {
     async loadPersistedLogs() {
         if (!this.db) return;
 
-        const transaction = this.db.transaction([this.storeName], 'readonly');
+        const transaction = this.db.transaction([this.storeName], "readonly");
         const objectStore = transaction.objectStore(this.storeName);
-        const index = objectStore.index('attemptId');
+        const index = objectStore.index("attemptId");
         const request = index.getAll(this.attemptId);
 
         request.onsuccess = () => {
@@ -104,13 +111,13 @@ class EventLogger {
      */
     getBrowserInfo() {
         const ua = navigator.userAgent;
-        let browser = 'Unknown';
+        let browser = "Unknown";
 
-        if (ua.indexOf('Chrome') > -1 && ua.indexOf('Edg') === -1) browser = 'Chrome';
-        else if (ua.indexOf('Safari') > -1 && ua.indexOf('Chrome') === -1) browser = 'Safari';
-        else if (ua.indexOf('Firefox') > -1) browser = 'Firefox';
-        else if (ua.indexOf('Edg') > -1) browser = 'Edge';
-        else if (ua.indexOf('MSIE') > -1 || ua.indexOf('Trident') > -1) browser = 'IE';
+        if (ua.indexOf("Chrome") > -1 && ua.indexOf("Edg") === -1) browser = "Chrome";
+        else if (ua.indexOf("Safari") > -1 && ua.indexOf("Chrome") === -1) browser = "Safari";
+        else if (ua.indexOf("Firefox") > -1) browser = "Firefox";
+        else if (ua.indexOf("Edg") > -1) browser = "Edge";
+        else if (ua.indexOf("MSIE") > -1 || ua.indexOf("Trident") > -1) browser = "IE";
 
         return browser;
     }
@@ -119,38 +126,46 @@ class EventLogger {
      * Track tab visibility and focus changes
      */
     setupVisibilityTracking() {
-        document.addEventListener('visibilitychange', () => {
-            this.logEvent('tab_visibility_change', {
+        document.addEventListener("visibilitychange", () => {
+            this.logEvent("tab_visibility_change", {
                 visible: !document.hidden,
             });
         });
 
-        window.addEventListener('focus', () => {
-            this.logEvent('window_focus', {
+        window.addEventListener("focus", () => {
+            this.logEvent("window_focus", {
                 focusState: true,
             });
         });
 
-        window.addEventListener('blur', () => {
-            this.logEvent('window_blur', {
+        window.addEventListener("blur", () => {
+            this.logEvent("window_blur", {
                 focusState: false,
             });
         });
     }
 
     /**
+     * Create a stable unique event id for dedupe on retries
+     */
+    generateEventId() {
+        // crypto.randomUUID is supported in modern browsers
+        if (crypto?.randomUUID) return crypto.randomUUID();
+        // fallback
+        return `evt_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    }
+
+    /**
      * Log an event with unified schema
-     * @param {string} eventType - Type of event (e.g., 'copy_attempt')
-     * @param {object} additionalData - Additional event-specific data
-     * @param {string} questionId - Optional question ID
      */
     logEvent(eventType, additionalData = {}, questionId = null) {
         if (this.isSubmitted) {
-            console.warn('Cannot log events after submission - logs are immutable');
+            console.warn("Cannot log events after submission - logs are immutable");
             return;
         }
 
         const event = {
+            eventId: this.generateEventId(), // ✅ NEW (dedupe)
             eventType,
             timestamp: Date.now(),
             attemptId: this.attemptId,
@@ -166,9 +181,8 @@ class EventLogger {
         this.eventQueue.push(event);
         this.persistEvent(event);
 
-        console.log(`[Event Logged] ${eventType}`, event);
+        // console.log(`[Event Logged] ${eventType}`, event);
 
-        // Trigger immediate batch if queue is full
         if (this.eventQueue.length >= this.batchSize) {
             this.processBatch();
         }
@@ -182,13 +196,13 @@ class EventLogger {
     async persistEvent(event) {
         if (!this.db) return;
 
-        const transaction = this.db.transaction([this.storeName], 'readwrite');
+        const transaction = this.db.transaction([this.storeName], "readwrite");
         const objectStore = transaction.objectStore(this.storeName);
 
         objectStore.add(event);
 
         transaction.onerror = () => {
-            console.error('Failed to persist event:', transaction.error);
+            console.error("Failed to persist event:", transaction.error);
         };
     }
 
@@ -201,24 +215,18 @@ class EventLogger {
         const batch = [...this.eventQueue];
         this.eventQueue = [];
 
-        console.log(`[Batch Processing] Sending ${batch.length} events`, batch);
-
-        // TODO: Replace with actual backend API call
+        // console.log(`[Batch Processing] Sending ${batch.length} events`, batch);
         this.sendToBackend(batch);
     }
 
     /**
      * Send batch to backend API
-     * @param {Array} batch - Array of events to send
      */
     async sendToBackend(batch) {
         try {
-            // Simulated API call - replace with actual endpoint
-            const response = await fetch('/api/test-events', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+            const response = await fetch(`${BACKEND_URL}/api/logs/frontend-batch`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     attemptId: this.attemptId,
                     events: batch,
@@ -226,16 +234,15 @@ class EventLogger {
             });
 
             if (!response.ok) {
-                throw new Error(`API error: ${response.status}`);
+                const text = await response.text().catch(() => "");
+                throw new Error(`API error: ${response.status} ${text}`);
             }
-
-            console.log('[Batch Sent] Successfully sent to backend');
         } catch (error) {
-            console.error('[Batch Failed] Error sending to backend:', error);
-            // Re-queue events on failure
+            console.error("[Batch Failed] Error sending to backend:", error);
             this.eventQueue.unshift(...batch);
         }
     }
+
 
     /**
      * Start automatic batch processor
@@ -257,24 +264,25 @@ class EventLogger {
     }
 
     /**
-     * Submit all logs and mark as immutable
+     * Submit all logs and mark as immutable (frontend + backend)
      */
     async submitLogs() {
         if (this.isSubmitted) {
-            console.warn('Logs already submitted');
+            console.warn("Logs already submitted");
             return;
         }
 
-        // Process any remaining events
+        // flush remaining events
         this.processBatch();
 
-        // Stop further logging
+        // stop further logging immediately
         this.isSubmitted = true;
         this.stopBatchProcessor();
 
-        // Log submission event
+        // log submission event locally
         const submissionEvent = {
-            eventType: 'logs_submitted',
+            eventId: this.generateEventId(),
+            eventType: "logs_submitted",
             timestamp: Date.now(),
             attemptId: this.attemptId,
             questionId: null,
@@ -286,8 +294,18 @@ class EventLogger {
 
         await this.persistEvent(submissionEvent);
 
-        console.log('[Logs Submitted] All logs are now immutable');
+        // ✅ Seal attempt on backend so backend rejects further events (real immutability)
+        try {
+            const res = await fetch(SEAL_ENDPOINT(this.attemptId), { method: "POST" });
+            if (!res.ok) {
+                const text = await res.text().catch(() => "");
+                console.warn("Seal attempt failed:", res.status, text);
+            }
+        } catch (e) {
+            console.warn("Seal attempt request failed:", e);
+        }
 
+        console.log("[Logs Submitted] All logs are now immutable");
         return submissionEvent;
     }
 
@@ -298,18 +316,13 @@ class EventLogger {
         if (!this.db) return 0;
 
         return new Promise((resolve) => {
-            const transaction = this.db.transaction([this.storeName], 'readonly');
+            const transaction = this.db.transaction([this.storeName], "readonly");
             const objectStore = transaction.objectStore(this.storeName);
-            const index = objectStore.index('attemptId');
+            const index = objectStore.index("attemptId");
             const request = index.count(this.attemptId);
 
-            request.onsuccess = () => {
-                resolve(request.result);
-            };
-
-            request.onerror = () => {
-                resolve(0);
-            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => resolve(0);
         });
     }
 
@@ -320,18 +333,13 @@ class EventLogger {
         if (!this.db) return [];
 
         return new Promise((resolve) => {
-            const transaction = this.db.transaction([this.storeName], 'readonly');
+            const transaction = this.db.transaction([this.storeName], "readonly");
             const objectStore = transaction.objectStore(this.storeName);
-            const index = objectStore.index('attemptId');
+            const index = objectStore.index("attemptId");
             const request = index.getAll(this.attemptId);
 
-            request.onsuccess = () => {
-                resolve(request.result);
-            };
-
-            request.onerror = () => {
-                resolve([]);
-            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => resolve([]);
         });
     }
 
@@ -351,20 +359,19 @@ class EventLogger {
     }
 
     /**
-     * Clear all logs (for testing only - should not be available in production)
+     * Clear all logs (testing only)
      */
     async clearAllLogs() {
         if (!this.db) return;
 
-        const transaction = this.db.transaction([this.storeName], 'readwrite');
+        const transaction = this.db.transaction([this.storeName], "readwrite");
         const objectStore = transaction.objectStore(this.storeName);
         objectStore.clear();
 
-        console.log('[Logs Cleared] All logs deleted');
+        console.log("[Logs Cleared] All logs deleted");
     }
 }
 
 // Export singleton instance
 const eventLogger = new EventLogger();
-
 export default eventLogger;
