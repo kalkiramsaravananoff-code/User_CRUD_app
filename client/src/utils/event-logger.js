@@ -1,7 +1,6 @@
 /**
  * Secure Test Environment - Event Logger
  *
- * Provides comprehensive event logging with:
  * - Unified event schema
  * - Batch processing for efficient transmission
  * - Local persistence using IndexedDB
@@ -12,16 +11,22 @@ const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL || "http://localhost:5000"
     .toString()
     .replace(/\/$/, "");
 
-const LOG_ENDPOINT = `${BACKEND_URL}/api/test-events`;
-const SEAL_ENDPOINT = (attemptId) => `${BACKEND_URL}/api/logs/attempt/${attemptId}/seal`;
+const SEAL_ENDPOINT = (attemptId) =>
+    `${BACKEND_URL}/api/logs/attempt/${attemptId}/seal`;
 
 class EventLogger {
     constructor() {
         this.attemptId = this.generateAttemptId();
         this.eventQueue = [];
+
         this.batchSize = 10;
         this.batchInterval = 5000; // 5 seconds
+
         this.isSubmitted = false;
+
+        // ✅ prevents overlapping flushes
+        this.isFlushing = false;
+
         this.dbName = "SecureTestDB";
         this.storeName = "eventLogs";
         this.db = null;
@@ -32,16 +37,10 @@ class EventLogger {
         this.setupVisibilityTracking();
     }
 
-    /**
-     * Generate unique attempt ID for this session
-     */
     generateAttemptId() {
         return `attempt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     }
 
-    /**
-     * Initialize IndexedDB for persistent storage
-     */
     async initializeDB() {
         return new Promise((resolve, reject) => {
             const request = indexedDB.open(this.dbName, 1);
@@ -73,9 +72,6 @@ class EventLogger {
         });
     }
 
-    /**
-     * Load persisted logs from IndexedDB on initialization
-     */
     async loadPersistedLogs() {
         if (!this.db) return;
 
@@ -90,9 +86,6 @@ class EventLogger {
         };
     }
 
-    /**
-     * Capture browser and device metadata
-     */
     captureMetadata() {
         this.metadata = {
             browser: this.getBrowserInfo(),
@@ -106,9 +99,6 @@ class EventLogger {
         };
     }
 
-    /**
-     * Detect browser information
-     */
     getBrowserInfo() {
         const ua = navigator.userAgent;
         let browser = "Unknown";
@@ -122,42 +112,25 @@ class EventLogger {
         return browser;
     }
 
-    /**
-     * Track tab visibility and focus changes
-     */
     setupVisibilityTracking() {
         document.addEventListener("visibilitychange", () => {
-            this.logEvent("tab_visibility_change", {
-                visible: !document.hidden,
-            });
+            this.logEvent("tab_visibility_change", { visible: !document.hidden });
         });
 
         window.addEventListener("focus", () => {
-            this.logEvent("window_focus", {
-                focusState: true,
-            });
+            this.logEvent("window_focus", { focusState: true });
         });
 
         window.addEventListener("blur", () => {
-            this.logEvent("window_blur", {
-                focusState: false,
-            });
+            this.logEvent("window_blur", { focusState: false });
         });
     }
 
-    /**
-     * Create a stable unique event id for dedupe on retries
-     */
     generateEventId() {
-        // crypto.randomUUID is supported in modern browsers
         if (crypto?.randomUUID) return crypto.randomUUID();
-        // fallback
         return `evt_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     }
 
-    /**
-     * Log an event with unified schema
-     */
     logEvent(eventType, additionalData = {}, questionId = null) {
         if (this.isSubmitted) {
             console.warn("Cannot log events after submission - logs are immutable");
@@ -165,7 +138,7 @@ class EventLogger {
         }
 
         const event = {
-            eventId: this.generateEventId(), // ✅ NEW (dedupe)
+            eventId: this.generateEventId(),
             eventType,
             timestamp: Date.now(),
             attemptId: this.attemptId,
@@ -181,18 +154,14 @@ class EventLogger {
         this.eventQueue.push(event);
         this.persistEvent(event);
 
-        // console.log(`[Event Logged] ${eventType}`, event);
-
+        // ✅ trigger flush when batchSize reached (don’t await, but guarded by isFlushing)
         if (this.eventQueue.length >= this.batchSize) {
-            this.processBatch();
+            void this.processBatch();
         }
 
         return event;
     }
 
-    /**
-     * Persist event to IndexedDB
-     */
     async persistEvent(event) {
         if (!this.db) return;
 
@@ -206,56 +175,50 @@ class EventLogger {
         };
     }
 
-    /**
-     * Process batch of events (send to backend)
-     */
-    processBatch() {
+    // ✅ REAL BATCH FLUSH (await + no overlap)
+    async processBatch() {
+        if (this.isFlushing) return;
         if (this.eventQueue.length === 0) return;
+
+        this.isFlushing = true;
 
         const batch = [...this.eventQueue];
         this.eventQueue = [];
 
-        // console.log(`[Batch Processing] Sending ${batch.length} events`, batch);
-        this.sendToBackend(batch);
-    }
-
-    /**
-     * Send batch to backend API
-     */
-    async sendToBackend(batch) {
         try {
-            const response = await fetch(`${BACKEND_URL}/api/logs/frontend-batch`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    attemptId: this.attemptId,
-                    events: batch,
-                }),
-            });
-
-            if (!response.ok) {
-                const text = await response.text().catch(() => "");
-                throw new Error(`API error: ${response.status} ${text}`);
-            }
+            await this.sendToBackend(batch);
         } catch (error) {
             console.error("[Batch Failed] Error sending to backend:", error);
+            // re-queue at front so it retries next time
             this.eventQueue.unshift(...batch);
+        } finally {
+            this.isFlushing = false;
         }
     }
 
+    async sendToBackend(batch) {
+        const response = await fetch(`${BACKEND_URL}/api/logs/batch`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                attemptId: this.attemptId,
+                events: batch,
+            }),
+        });
 
-    /**
-     * Start automatic batch processor
-     */
+        if (!response.ok) {
+            const text = await response.text().catch(() => "");
+            throw new Error(`API error: ${response.status} ${text}`);
+        }
+    }
+
     startBatchProcessor() {
         this.batchTimer = setInterval(() => {
-            this.processBatch();
+            // flush whatever is queued every interval
+            void this.processBatch();
         }, this.batchInterval);
     }
 
-    /**
-     * Stop batch processor
-     */
     stopBatchProcessor() {
         if (this.batchTimer) {
             clearInterval(this.batchTimer);
@@ -263,23 +226,19 @@ class EventLogger {
         }
     }
 
-    /**
-     * Submit all logs and mark as immutable (frontend + backend)
-     */
     async submitLogs() {
         if (this.isSubmitted) {
             console.warn("Logs already submitted");
             return;
         }
 
-        // flush remaining events
-        this.processBatch();
-
-        // stop further logging immediately
+        // stop new logs immediately
         this.isSubmitted = true;
+
+        // stop the timer so it won’t interfere; we will flush manually now
         this.stopBatchProcessor();
 
-        // log submission event locally
+        // add submission event (manually, because logEvent is blocked now)
         const submissionEvent = {
             eventId: this.generateEventId(),
             eventType: "logs_submitted",
@@ -292,9 +251,14 @@ class EventLogger {
             },
         };
 
+        // ensure it is flushed too
+        this.eventQueue.push(submissionEvent);
         await this.persistEvent(submissionEvent);
 
-        // ✅ Seal attempt on backend so backend rejects further events (real immutability)
+        // ✅ flush remaining logs (await)
+        await this.processBatch();
+
+        // ✅ seal attempt (backend immutability)
         try {
             const res = await fetch(SEAL_ENDPOINT(this.attemptId), { method: "POST" });
             if (!res.ok) {
@@ -309,9 +273,6 @@ class EventLogger {
         return submissionEvent;
     }
 
-    /**
-     * Get total event count from IndexedDB
-     */
     async getTotalEventCount() {
         if (!this.db) return 0;
 
@@ -326,9 +287,6 @@ class EventLogger {
         });
     }
 
-    /**
-     * Get all logs for this attempt
-     */
     async getAllLogs() {
         if (!this.db) return [];
 
@@ -343,9 +301,6 @@ class EventLogger {
         });
     }
 
-    /**
-     * Export logs as JSON
-     */
     async exportLogs() {
         const logs = await this.getAllLogs();
         const exportData = {
@@ -358,9 +313,6 @@ class EventLogger {
         return JSON.stringify(exportData, null, 2);
     }
 
-    /**
-     * Clear all logs (testing only)
-     */
     async clearAllLogs() {
         if (!this.db) return;
 
@@ -372,6 +324,5 @@ class EventLogger {
     }
 }
 
-// Export singleton instance
 const eventLogger = new EventLogger();
 export default eventLogger;

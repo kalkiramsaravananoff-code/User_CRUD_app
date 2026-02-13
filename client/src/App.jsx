@@ -15,7 +15,6 @@ export default function App() {
       <nav className="app-nav">
         <Link to="/" className="nav-link">CRUD App</Link>
         <Link to="/test" className="nav-link">Candidate Test</Link>
-        <Link to="/admin/logs?admin=1" className="nav-link">Admin Logs</Link>
       </nav>
 
       {/* Routes */}

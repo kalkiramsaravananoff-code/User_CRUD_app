@@ -1,4 +1,4 @@
-import AssessmentLog, { Attempt } from "../model/logModel.js";
+import { Attempt } from "../model/logModel.js";
 
 const MAX_BATCH = 500;
 
@@ -19,34 +19,32 @@ function clampMetadata(meta, maxBytes = 16000) {
 }
 
 async function ensureAttemptActive(attemptId) {
+    // create attempt if not exists
     await Attempt.updateOne(
         { attemptId },
         { $setOnInsert: { attemptId, status: "ACTIVE", createdAt: new Date() } },
         { upsert: true }
     );
 
-    const attempt = await Attempt.findOne({ attemptId }).lean();
+    const attempt = await Attempt.findOne({ attemptId }).select("status").lean();
     if (attempt?.status === "SEALED") {
         const err = new Error("Attempt is SEALED. No more logs accepted.");
         err.statusCode = 409;
         throw err;
     }
-    return attempt;
 }
 
-function normalizeLog(raw, fallbackAttemptId) {
+function normalizeEvent(raw, fallbackAttemptId) {
     const attemptId = String(raw?.attemptId || fallbackAttemptId || "").trim();
     if (!attemptId) return { ok: false };
 
     const eventType = String(raw?.eventType || raw?.type || "").trim();
     if (!eventType) return { ok: false };
 
-    const eventId = raw?.eventId ? String(raw.eventId).trim() : null;
-
     return {
         ok: true,
         doc: {
-            eventId,
+            eventId: raw?.eventId ? String(raw.eventId).trim() : null,
             eventType,
             attemptId,
             questionId: raw?.questionId ? String(raw.questionId) : null,
@@ -60,7 +58,8 @@ function normalizeLog(raw, fallbackAttemptId) {
 // POST /api/logs  (single)
 export const createLog = async (req, res) => {
     try {
-        const { eventType, attemptId, questionId, metadata, timestamp, eventId } = req.body;
+        const { eventType, attemptId, questionId, metadata, timestamp, eventId } =
+            req.body;
 
         if (!eventType || !attemptId) {
             return res
@@ -68,30 +67,27 @@ export const createLog = async (req, res) => {
                 .json({ success: false, message: "eventType and attemptId are required." });
         }
 
-        await ensureAttemptActive(String(attemptId).trim());
+        const id = String(attemptId).trim();
+        await ensureAttemptActive(id);
 
-        const newLog = new AssessmentLog({
-            eventId: eventId ? String(eventId) : null,
-            eventType: String(eventType),
-            attemptId: String(attemptId),
-            questionId: questionId ? String(questionId) : null,
-            metadata: clampMetadata(metadata || {}, 16000),
-            timestamp: toDate(timestamp || Date.now()),
-            receivedAt: new Date(),
-        });
+        const newEvent = normalizeEvent(
+            { eventType, attemptId: id, questionId, metadata, timestamp, eventId },
+            id
+        ).doc;
 
-        await newLog.save();
-        return res.status(201).json({ success: true, message: "Log created successfully", log: newLog });
-    } catch (error) {
-        // ✅ IMPORTANT: duplicate key should not be a 500
-        if (error?.code === 11000) {
-            return res.status(200).json({
-                success: true,
-                message: "Duplicate log ignored",
-                duplicate: true,
-            });
+        const result = await Attempt.updateOne(
+            { attemptId: id, status: { $ne: "SEALED" } },
+            { $push: { events: newEvent } }
+        );
+
+        if (result.matchedCount === 0) {
+            return res.status(409).json({ success: false, message: "Attempt not found or sealed." });
         }
 
+        return res
+            .status(201)
+            .json({ success: true, message: "Log created successfully", event: newEvent });
+    } catch (error) {
         console.error("Error creating log:", error);
         return res.status(error.statusCode || 500).json({
             success: false,
@@ -103,7 +99,6 @@ export const createLog = async (req, res) => {
 // POST /api/logs/batch  (accepts {logs:[]} OR {attemptId, events:[]})
 export const batchLogs = async (req, res) => {
     try {
-        // Support both schemas
         const attemptId = String(req.body?.attemptId || "").trim();
         const logsArray = Array.isArray(req.body?.logs) ? req.body.logs : null;
         const eventsArray = Array.isArray(req.body?.events) ? req.body.events : null;
@@ -124,7 +119,6 @@ export const batchLogs = async (req, res) => {
             });
         }
 
-        // attemptId can be in body OR per-item
         const inferredAttemptId = attemptId || items?.[0]?.attemptId;
         if (!inferredAttemptId) {
             return res.status(400).json({
@@ -133,65 +127,40 @@ export const batchLogs = async (req, res) => {
             });
         }
 
-        await ensureAttemptActive(String(inferredAttemptId).trim());
+        const id = String(inferredAttemptId).trim();
+        await ensureAttemptActive(id);
 
+        const normalizedEvents = [];
         let rejected = 0;
-        const docs = [];
 
         for (const raw of items) {
-            const n = normalizeLog(raw, inferredAttemptId);
+            const n = normalizeEvent(raw, id);
             if (!n.ok) {
-                rejected += 1;
+                rejected++;
                 continue;
             }
-            docs.push(n.doc);
+            normalizedEvents.push(n.doc);
         }
 
-        if (docs.length === 0) {
+        if (normalizedEvents.length === 0) {
             return res.status(400).json({ success: false, message: "No valid logs found in batch." });
         }
 
-        let inserted = 0;
-        let duplicates = 0;
+        const result = await Attempt.updateOne(
+            { attemptId: id, status: { $ne: "SEALED" } },
+            { $push: { events: { $each: normalizedEvents } } }
+        );
 
-        try {
-            // ✅ ordered:false = continue inserting even if some fail
-            const insertedLogs = await AssessmentLog.insertMany(docs, { ordered: false });
-            inserted = insertedLogs.length;
-        } catch (err) {
-            /**
-             * Your actual error shape was:
-             * err.errorResponse.writeErrors[i].err.code === 11000
-             * So we must read BOTH paths.
-             */
-            const writeErrors = err?.writeErrors || err?.errorResponse?.writeErrors || [];
-
-            const codes = writeErrors.map((e) => e?.code ?? e?.err?.code);
-
-            duplicates = codes.filter((c) => c === 11000).length;
-            const hasNonDup = codes.some((c) => c && c !== 11000);
-
-            // If we couldn't parse errors OR there is any non-dup error => real failure
-            if (!writeErrors.length || hasNonDup) {
-                console.error("Batch insert error:", err);
-                return res.status(500).json({
-                    success: false,
-                    message: "Server error while inserting logs.",
-                    error: err?.message,
-                });
-            }
-
-            // Only duplicate errors happened
-            inserted = docs.length - writeErrors.length;
+        if (result.matchedCount === 0) {
+            return res.status(409).json({ success: false, message: "Attempt not found or sealed." });
         }
 
         return res.status(201).json({
             success: true,
             message: "Batch logs created successfully",
-            attemptId: inferredAttemptId,
+            attemptId: id,
             received: items.length,
-            inserted,
-            duplicates,
+            inserted: normalizedEvents.length,
             rejected,
         });
     } catch (error) {
@@ -206,21 +175,25 @@ export const batchLogs = async (req, res) => {
 // alias: POST /api/logs/frontend-batch
 export const createFrontendLogBatch = batchLogs;
 
-// GET /api/logs/:attemptId
+// GET /api/logs/:attemptId  ✅ NOW returns Attempt.events
 export const getLogsByAttempt = async (req, res) => {
     try {
-        const { attemptId } = req.params;
+        const attemptId = String(req.params.attemptId || "").trim();
         if (!attemptId) {
             return res.status(400).json({ success: false, message: "Attempt ID is required." });
         }
 
-        const logs = await AssessmentLog.find({ attemptId: String(attemptId).trim() })
-            .sort({ timestamp: 1 })
-            .lean();
+        const attempt = await Attempt.findOne({ attemptId }).lean();
+        if (!attempt) {
+            return res.status(404).json({ success: false, message: "Attempt not found." });
+        }
 
-        const attempt = await Attempt.findOne({ attemptId: String(attemptId).trim() }).lean();
-
-        return res.status(200).json({ success: true, attempt, count: logs.length, logs });
+        return res.status(200).json({
+            success: true,
+            attempt,
+            count: attempt.events?.length || 0,
+            events: attempt.events || [],
+        });
     } catch (error) {
         console.error("Error fetching logs:", error);
         return res.status(500).json({
