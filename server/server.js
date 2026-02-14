@@ -23,13 +23,18 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/api/user", userrouter);
 app.use("/api/logs", logRouter);
 
+/* ✅ API error handler (so API never returns HTML) */
+app.use("/api", (err, req, res, next) => {
+  console.error("API error:", err);
+  res.status(500).json({ success: false, error: err?.message || "Server error" });
+});
+
+/* ✅ API 404 (so /api fallthrough never hits SPA) */
+app.use("/api", (req, res) => {
+  res.status(404).json({ success: false, error: "API route not found" });
+});
+
 /* -------------------------- Serve React build ------------------------- */
-/**
- * IMPORTANT:
- * Your backend runs from /server
- * Your frontend build output is /client/dist
- * So in production we must serve ../client/dist
- */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -39,9 +44,8 @@ const indexHtml = path.join(clientDist, "index.html");
 if (fs.existsSync(indexHtml)) {
   app.use(express.static(clientDist));
 
-  // SPA fallback (BrowserRouter refresh fix)
-  app.get("*", (req, res, next) => {
-    if (req.path.startsWith("/api")) return next();
+  // ✅ SPA fallback (only for non-API)
+  app.get("*", (req, res) => {
     res.sendFile(indexHtml);
   });
 } else {
