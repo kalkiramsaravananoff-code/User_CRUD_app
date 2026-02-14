@@ -14,57 +14,45 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-/* ----------------------------- middleware ----------------------------- */
+/* ----------------------------- Middleware ----------------------------- */
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-/* -------------------------------- APIs -------------------------------- */
+/* ------------------------------- API Routes --------------------------- */
 app.use("/api/user", userrouter);
 app.use("/api/logs", logRouter);
 
-/* -------------------------- serve frontend (SPA) ------------------------ */
+/* -------------------------- Serve React build ------------------------- */
 /**
- * This fixes: /test works by clicking, but refresh gives 404.
- * We serve the built frontend and always return index.html for non-API routes.
+ * IMPORTANT:
+ * Your backend runs from /server
+ * Your frontend build output is /client/dist
+ * So in production we must serve ../client/dist
  */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// try common build locations
-const candidateBuildDirs = [
-  path.join(__dirname, "dist"),
-  path.join(__dirname, "client", "dist"),
-  path.join(__dirname, "frontend", "dist"),
-  path.join(__dirname, "public"),
-];
+const clientDist = path.join(__dirname, "..", "client", "dist");
+const indexHtml = path.join(clientDist, "index.html");
 
-const buildDir = candidateBuildDirs.find((p) => fs.existsSync(p));
+if (fs.existsSync(indexHtml)) {
+  app.use(express.static(clientDist));
 
-if (buildDir) {
-  app.use(express.static(buildDir));
-
-  // ✅ SPA fallback (exclude /api)
+  // SPA fallback (BrowserRouter refresh fix)
   app.get("*", (req, res, next) => {
     if (req.path.startsWith("/api")) return next();
-    return res.sendFile(path.join(buildDir, "index.html"));
+    res.sendFile(indexHtml);
   });
 } else {
-  console.warn(
-    "⚠️ Frontend build folder not found. Build your React app (vite build) and ensure dist exists."
-  );
+  console.warn("⚠️ React build not found:", indexHtml);
+  console.warn("⚠️ Run client build during deploy so /client/dist exists.");
 }
 
-/* ------------------------------ 404 for APIs ---------------------------- */
-app.use("/api", (req, res) => {
-  res.status(404).json({ error: "API route not found" });
-});
-
+/* ------------------------------ Start Server -------------------------- */
 async function start() {
   await connectDB();
-  app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 }
 
 start().catch((err) => {
